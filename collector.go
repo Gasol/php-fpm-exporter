@@ -2,7 +2,7 @@ package exporter
 
 import (
 	"io/ioutil"
-	"net/http"
+	//"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/tomasen/fcgi_client"
 )
 
 var (
@@ -71,26 +72,22 @@ func (c *collector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func getData(u *url.URL) ([]byte, error) {
-	req := http.Request{
-		Method:     "GET",
-		URL:        u,
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Header:     make(http.Header),
-		Host:       u.Host,
-	}
+	env := make(map[string]string)
+	env["REQUEST_METHOD"] = "GET"
+	env["SCRIPT_FILENAME"] = "/phpstatus"
+	env["SCRIPT_NAME"] = "/phpstatus"
 
-	resp, err := http.DefaultClient.Do(&req)
+	fcgi, err := fcgiclient.Dial("unix", "/var/run/php-fpm-www.sock")
+	if err != nil {
+		return nil, errors.Wrap(err, "Error")
+	}
+	resp, err := fcgi.Get(env)
+
 	if err != nil {
 		return nil, errors.Wrap(err, "HTTP request failed")
 	}
 
 	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("unexpected HTTP status: %d", resp.StatusCode)
-	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
